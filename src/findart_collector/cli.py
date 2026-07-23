@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+from .policy_briefing import FinDartApiClient, KoreaPolicyBriefingCollector
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="대한민국 정책브리핑 부처 브리핑 수집기")
+    parser.add_argument("--pages", type=int, default=1, help="조회할 목록 페이지 수 (기본값: 1)")
+    parser.add_argument("--limit", type=int, help="수집할 문서 최대 수")
+    parser.add_argument("--ingest", action="store_true", help="FinDART API에 적재")
+    parser.add_argument("--findart-uri", default=os.getenv("FINDART_URI", "http://findart.com"))
+    args = parser.parse_args()
+
+    briefings = KoreaPolicyBriefingCollector().collect_pages(args.pages, args.limit)
+    if not args.ingest:
+        for briefing in briefings:
+            print(json.dumps(briefing.original_payload(), ensure_ascii=False))
+        return 0
+
+    client = FinDartApiClient(args.findart_uri, os.getenv("FINDART_TOKEN", ""))
+    for briefing in briefings:
+        original_id, processed = client.ingest(briefing)
+        status = processed.get("data", {}).get("status", "UNKNOWN")
+        print(f"{briefing.external_id}: original={original_id}, policy={status}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
