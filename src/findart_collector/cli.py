@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dotenv import load_dotenv
 import argparse
 import json
 import os
@@ -9,6 +10,7 @@ from .policy_briefing import FinDartApiClient, KoreaPolicyBriefingCollector
 
 
 def main() -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="대한민국 정책브리핑 부처 브리핑 수집기")
     parser.add_argument("--pages", type=int, default=1, help="조회할 목록 페이지 수 (기본값: 1)")
     parser.add_argument("--limit", type=int, help="수집할 문서 최대 수")
