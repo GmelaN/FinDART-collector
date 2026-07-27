@@ -1,0 +1,78 @@
+{{- range $collectorName, $collector := .Values.collectors }}
+{{- if $collector.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "findart-collector.collectorFullname" (dict "root" $ "name" $collectorName) }}
+  labels:
+    {{- include "findart-collector.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $collectorName | kebabcase }}
+spec:
+  schedule: {{ required (printf "collectors.%s.schedule is required" $collectorName) $collector.schedule | quote }}
+  concurrencyPolicy: {{ default "Forbid" $collector.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ default 1 $collector.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ default 3 $collector.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ default 3 $collector.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            {{- include "findart-collector.selectorLabels" $ | nindent 12 }}
+            app.kubernetes.io/component: {{ $collectorName | kebabcase }}
+        spec:
+          restartPolicy: OnFailure
+          {{- with $.Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: {{ $collectorName | kebabcase }}
+              image: "{{ $.Values.image.repository }}:{{ required "image.tag is required" $.Values.image.tag }}"
+              imagePullPolicy: {{ $.Values.image.pullPolicy }}
+              command: {{ $collector.command | toJson }}
+              {{- with $collector.args }}
+              args: {{ . | toJson }}
+              {{- end }}
+              env:
+                - name: OPENDART_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.env.secretName }}
+                      key: {{ $.Values.env.opendartApiKey }}
+
+                - name: FINDART_URI
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.env.secretName }}
+                      key: {{ $.Values.env.findartUrlKey }}
+
+                - name: FINDART_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.env.secretName }}
+                      key: {{ $.Values.env.findartTokenKey }}
+                      
+                - name: NEWS_RSS_URIS
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.env.secretName }}
+                      key: {{ $.Values.env.newsRssUriKey }}
+
+                - name: NVIDIA_NIM_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.env.secretName }}
+                      key: {{ $.Values.env.nvidiaNimApiKey }}
+
+                - name: NVIDIA_NIM_MODEL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.env.secretName }}
+                      key: {{ $.Values.env.nvidiaNimModelKey }}
+
+              resources:
+                {{- toYaml (default $.Values.defaultResources $collector.resources) | nindent 16 }}
+---
+{{- end }}
+{{- end }}

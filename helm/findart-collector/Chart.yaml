@@ -1,0 +1,6 @@
+apiVersion: v2
+name: findart-collector
+description: Scheduled collectors for FinDART source documents
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

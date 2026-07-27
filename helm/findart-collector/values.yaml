@@ -1,0 +1,57 @@
+image:
+  repository: ghcr.io/gmelan/findart-collector
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: findart-collector
+
+env:
+  secretName: findart-collector-secret
+  opendartApiKey: opendartApi
+  findartUrlKey: findartUrl
+  findartTokenKey: findartToken
+  newsRssUriKey: newsRssUri
+  nvidiaNimApiKey: nvidiaNimApi
+  nvidiaNimModelKey: nvidiaNimModel
+
+defaultResources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+collectors:
+  policyBriefing:
+    enabled: true
+    schedule: "0 */6 * * *"
+    concurrencyPolicy: Forbid
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 3
+    backoffLimit: 3
+    command:
+      - findart-policy-briefing
+    args:
+      - --ingest
+      - --pages
+      - "2"
+    resources: {}
+
+  newsRss:
+    enabled: true
+    schedule: "15 */6 * * *"
+    concurrencyPolicy: Forbid
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 3
+    backoffLimit: 3
+    command:
+      - findart-news-rss
+    args:
+      - --limit-per-source
+      - "10"
+    resources: {}
