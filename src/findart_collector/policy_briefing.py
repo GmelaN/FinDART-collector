@@ -215,8 +215,8 @@ class KoreaPolicyBriefingCollector:
 
 class FinDartApiClient:
     def __init__(self, base_url: str, token: str, session: requests.Session | None = None, timeout: float = 20.0) -> None:
-        if not token:
-            raise ValueError("FinDART API 토큰이 필요합니다")
+        # if not token:
+        #     raise ValueError("FinDART API 토큰이 필요합니다")
         self.base_url = base_url.rstrip("/")
         self.session = session or requests.Session()
         self.timeout = timeout
@@ -234,9 +234,11 @@ class FinDartApiClient:
     def _post(self, path: str, payload: dict[str, object]) -> dict[str, object]:
         response = self.session.post(f"{self.base_url}{path}", json=payload, headers=self.headers, timeout=self.timeout)
         response.raise_for_status()
+
+        if not response.status_code in {200, 201}:
+            raise RuntimeError(f"FinDART 적재 실패: {response.text}")
+
         result = response.json()
-        if not result.get("success", False):
-            raise RuntimeError(f"FinDART 적재 실패: {result.get('error')}")
         return result
 
     @staticmethod
