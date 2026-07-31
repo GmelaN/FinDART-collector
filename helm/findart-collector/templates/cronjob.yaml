@@ -71,6 +71,18 @@ spec:
                       name: {{ $.Values.env.secretName }}
                       key: {{ $.Values.env.nvidiaNimModelKey }}
 
+                - name: NVIDIA_NIM_FALLBACK_MODELS
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.env.secretName }}
+                      key: {{ $.Values.env.nvidiaNimFallbackModelsKey }}
+
+                - name: KOREA_BANK_ECOS_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.env.secretName }}
+                      key: {{ $.Values.env.koreaBankEcosApiKey }}
+
               resources:
                 {{- toYaml (default $.Values.defaultResources $collector.resources) | nindent 16 }}
 ---

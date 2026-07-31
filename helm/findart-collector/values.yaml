@@ -17,6 +17,8 @@ env:
   newsRssUriKey: newsRssUri
   nvidiaNimApiKey: nvidiaNimApi
   nvidiaNimModelKey: nvidiaNimModel
+  nvidiaNimFallbackModelsKey: nvidiaNimFallbackModels
+  koreaBankEcosApiKey: koreaBankEcosApi
 
 defaultResources:
   requests:
@@ -52,6 +54,7 @@ collectors:
     command:
       - findart-news-rss
     args:
+      - --ingest
       - --limit-per-source
       - "10"
     resources: {}
