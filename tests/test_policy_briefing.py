@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import unittest
 
 from findart_collector.policy_briefing import (
+    FinDartApiClient,
     KoreaPolicyBriefingCollector,
     PolicyBriefingParseError,
     parse_policy_briefing,
@@ -37,6 +38,45 @@ class FakeSession:
         )
 
 
+class ApiResponse:
+    status_code = 200
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self.payload
+
+
+class PolicyBriefingApiSession:
+    def __init__(self):
+        self.requests = []
+
+    def get(self, url, **kwargs):
+        self.requests.append((url, kwargs))
+        page = kwargs["params"]["page"]
+        pages = [
+            {
+                "content": [{"id": "policy-1", "title": "AI 산업 육성", "body": "지원 방안", "publishedAt": "2026-07-24T09:00:00Z"}],
+                "page": 0,
+                "size": 100,
+                "totalElements": 2,
+                "totalPages": 2,
+            },
+            {
+                "content": [{"id": "policy-2", "title": "수출 지원", "body": "금융 지원", "publishedAt": "2026-07-24T10:00:00Z"}],
+                "page": 1,
+                "size": 100,
+                "totalElements": 2,
+                "totalPages": 2,
+            },
+        ]
+        return ApiResponse({"success": True, "data": pages[page]})
+
+
 class PolicyBriefingParserTests(unittest.TestCase):
     def test_parses_detail_page_and_builds_api_payloads(self):
         collected_at = datetime(2026, 7, 23, 12, tzinfo=timezone.utc)
@@ -70,3 +110,21 @@ class PolicyBriefingParserTests(unittest.TestCase):
                 "https://www.korea.kr/briefing/policyBriefingView.do?newsId=156771707",
             ],
         )
+
+
+class FinDartApiClientTests(unittest.TestCase):
+    def test_lists_all_policy_briefings_for_the_requested_day(self):
+        session = PolicyBriefingApiSession()
+        client = FinDartApiClient("https://findart.example/", "token", session=session)
+
+        briefings = client.list_policy_briefings(date(2026, 7, 24))
+
+        self.assertEqual([briefing["id"] for briefing in briefings], ["policy-1", "policy-2"])
+        self.assertEqual(
+            [request[1]["params"] for request in session.requests],
+            [
+                {"from": "2026-07-24", "to": "2026-07-24", "page": 0, "size": 100},
+                {"from": "2026-07-24", "to": "2026-07-24", "page": 1, "size": 100},
+            ],
+        )
+        self.assertEqual(session.requests[0][1]["headers"], {"Authorization": "Bearer token"})

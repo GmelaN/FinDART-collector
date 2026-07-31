@@ -52,15 +52,16 @@ class PolicyBriefing:
             "collectedAt": isoformat(self.collected_at),
         }
 
-    def policy_payload(self, original_content_id: str) -> dict[str, object]:
+    def policy_payload(self, original_content_id: str, *, body: str | None = None) -> dict[str, object]:
+        processed_body = body or self.body
         return {
             "source": SOURCE_NAME,
             "externalId": self.external_id,
             "collectedAt": isoformat(self.collected_at),
-            "checksum": self.checksum,
+            "checksum": sha256(processed_body.encode("utf-8")).hexdigest(),
             "originalContentIds": [original_content_id],
             "title": self.title,
-            "body": self.body,
+            "body": processed_body,
             "publishedAt": isoformat(self.published_at),
             "evidence": [
                 {
@@ -222,12 +223,38 @@ class FinDartApiClient:
         self.timeout = timeout
         self.headers = {"Authorization": f"Bearer {token}"}
 
-    def ingest(self, briefing: PolicyBriefing) -> tuple[str, dict[str, object]]:
-        original = self._post("/api/v1/collector/original-contents", briefing.original_payload())
-        original_id = self._ingestion_id(original)
-        processed = self._post(
+    def ingest_original(self, payload: dict[str, object]) -> str:
+        return self._ingestion_id(self._post("/api/v1/collector/original-contents", payload))
+
+    def ingest_processed(self, path: str, payload: dict[str, object]) -> dict[str, object]:
+        return self._post(path, payload)
+
+    def list_policy_briefings(self, day: date) -> list[dict[str, object]]:
+        """Return every policy briefing published on the given calendar day."""
+        page = 0
+        briefings: list[dict[str, object]] = []
+        while True:
+            result = self._get(
+                "/api/v1/policy-briefings",
+                params={"from": day.isoformat(), "to": day.isoformat(), "page": page, "size": 100},
+            )
+            data = result.get("data")
+            if not isinstance(data, dict):
+                raise RuntimeError("FinDART 정책브리핑 조회 응답에 data가 없습니다")
+            content = data.get("content")
+            if not isinstance(content, list):
+                raise RuntimeError("FinDART 정책브리핑 조회 응답에 content가 없습니다")
+            briefings.extend(item for item in content if isinstance(item, dict))
+            total_pages = data.get("totalPages")
+            if not isinstance(total_pages, int) or page >= total_pages - 1:
+                return briefings
+            page += 1
+
+    def ingest(self, briefing: PolicyBriefing, *, processed_body: str | None = None) -> tuple[str, dict[str, object]]:
+        original_id = self.ingest_original(briefing.original_payload())
+        processed = self.ingest_processed(
             "/api/v1/collector/processed-contents/policy-briefings",
-            briefing.policy_payload(original_id),
+            briefing.policy_payload(original_id, body=processed_body),
         )
         return original_id, processed
 
@@ -239,6 +266,14 @@ class FinDartApiClient:
             raise RuntimeError(f"FinDART 적재 실패: {response.text}")
 
         result = response.json()
+        return result
+
+    def _get(self, path: str, *, params: dict[str, object]) -> dict[str, object]:
+        response = self.session.get(f"{self.base_url}{path}", params=params, headers=self.headers, timeout=self.timeout)
+        response.raise_for_status()
+        result = response.json()
+        if not isinstance(result, dict):
+            raise RuntimeError("FinDART 조회 응답이 JSON 객체가 아닙니다")
         return result
 
     @staticmethod

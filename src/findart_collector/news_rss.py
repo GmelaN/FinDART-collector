@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
+from email.utils import parsedate_to_datetime
+from hashlib import sha256
+from itertools import zip_longest
+from typing import Iterable
 from xml.etree import ElementTree
 
 import requests
@@ -23,12 +28,59 @@ class NewsItem:
     summary: str
     published_at: str | None
 
+    def published_datetime(self, fallback: datetime) -> datetime:
+        if not self.published_at:
+            return fallback
+        try:
+            value = parsedate_to_datetime(self.published_at)
+        except (TypeError, ValueError, IndexError):
+            try:
+                value = datetime.fromisoformat(self.published_at.replace("Z", "+00:00"))
+            except ValueError:
+                return fallback
+        return (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value).astimezone(timezone.utc)
+
+    def original_payload(self, collected_at: datetime) -> dict[str, object]:
+        published_at = self.published_datetime(collected_at)
+        source = f"NEWS_RSS:{sha256(self.source_url.encode('utf-8')).hexdigest()[:12]}"
+        return {
+            "contentType": "ARTICLE",
+            "source": source,
+            "externalId": self.external_id,
+            "sourceUrl": self.url,
+            "title": self.title,
+            "rawBody": self.summary or self.title,
+            "publisher": self.source,
+            "language": "ko",
+            "attributes": {"feedUrl": self.source_url},
+            "publishedAt": isoformat(published_at),
+            "collectedAt": isoformat(collected_at),
+        }
+
 
 @dataclass(frozen=True)
 class FeedResult:
     source: str
     source_url: str
     items: list[NewsItem]
+
+
+def isoformat(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def briefing_date(item: NewsItem, fallback: datetime) -> date:
+    """Group articles by their source publication date (in the source timezone)."""
+    if item.published_at:
+        try:
+            parsed = parsedate_to_datetime(item.published_at)
+            return (parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed).date()
+        except (TypeError, ValueError, IndexError):
+            try:
+                return datetime.fromisoformat(item.published_at.replace("Z", "+00:00")).date()
+            except ValueError:
+                pass
+    return fallback.date()
 
 
 def _text(element: ElementTree.Element | None) -> str:
@@ -43,7 +95,7 @@ def _children(element: ElementTree.Element, name: str) -> list[ElementTree.Eleme
     return [child for child in element if child.tag.rsplit("}", 1)[-1] == name]
 
 
-def parse_rss(xml: str, source_url: str, limit: int | None = None) -> FeedResult:
+def parse_rss(xml: str | bytes, source_url: str, limit: int | None = None) -> FeedResult:
     root = ElementTree.fromstring(xml)
     channel = _child(root, "channel")
     if channel is not None:
@@ -75,6 +127,23 @@ def parse_rss(xml: str, source_url: str, limit: int | None = None) -> FeedResult
     return FeedResult(source, source_url, items)
 
 
+def interleave_feed_items(results: Iterable[FeedResult]) -> list[NewsItem]:
+    """Merge feeds fairly so an early, busy feed cannot dominate LLM context."""
+    iterators = [iter(result.items) for result in results]
+    items: list[NewsItem] = []
+    seen: set[str] = set()
+    for batch in zip_longest(*iterators):
+        for item in batch:
+            if item is None:
+                continue
+            key = item.url or f"{item.source_url}:{item.external_id}"
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+    return items
+
+
 class NewsRssCollector:
     def __init__(self, feed_urls: list[str], session: requests.Session | None = None, timeout: float = 20.0) -> None:
         self.feed_urls = feed_urls
@@ -94,7 +163,9 @@ class NewsRssCollector:
             try:
                 response = self.session.get(feed_url, timeout=self.timeout)
                 response.raise_for_status()
-                results.append(parse_rss(response.text, feed_url, limit_per_source))
+                # Feed HTTP headers frequently omit or misstate the charset.
+                # ElementTree can honor the XML declaration when given bytes.
+                results.append(parse_rss(response.content, feed_url, limit_per_source))
             except (requests.RequestException, ElementTree.ParseError, ValueError) as error:
                 errors.append(f"{feed_url}: {error}")
         return results, errors

@@ -7,6 +7,8 @@ import os
 import sys
 
 from .policy_briefing import FinDartApiClient, KoreaPolicyBriefingCollector
+from .nim import NimClient
+from .pipeline import ingest_policy_briefings
 
 
 def main() -> int:
@@ -25,8 +27,12 @@ def main() -> int:
         return 0
 
     client = FinDartApiClient(args.findart_uri, os.getenv("FINDART_TOKEN", ""))
-    for briefing in briefings:
-        original_id, processed = client.ingest(briefing)
+    nim = NimClient(
+        os.getenv("NVIDIA_NIM_API_KEY", ""),
+        os.getenv("NVIDIA_NIM_MODEL", ""),
+        fallback_models=os.getenv("NVIDIA_NIM_FALLBACK_MODELS", "").split(","),
+    )
+    for briefing, (original_id, processed) in zip(briefings, ingest_policy_briefings(briefings, client, nim)):
         status = processed.get("data", {}).get("status", "UNKNOWN")
         print(f"{briefing.external_id}: original={original_id}, policy={status}")
     return 0

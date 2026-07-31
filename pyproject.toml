@@ -3,7 +3,7 @@ name = "findart-collector"
 version = "0.1.0"
 description = "Collectors for FinDART source documents"
 requires-python = ">=3.11"
-dependencies = ["python-dotenv>=1.0", "requests>=2.31"]
+dependencies = ["finance-datareader>=0.9.90", "python-dotenv>=1.0", "requests>=2.31"]
 
 [project.scripts]
 findart-policy-briefing = "findart_collector.cli:main"
