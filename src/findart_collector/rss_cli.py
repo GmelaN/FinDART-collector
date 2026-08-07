@@ -5,8 +5,10 @@ import json
 import os
 import sys
 
+import requests
 from dotenv import load_dotenv
 
+from .bok_monetary_policy import BokMonetaryPolicyCollector, MonetaryPolicyNotFoundError
 from .news_rss import NewsRssCollector, interleave_feed_items, parse_feed_urls
 from .nim import NimClient
 from .market_data import MarketDataCollector
@@ -36,7 +38,19 @@ def main() -> int:
             fallback_models=os.getenv("NVIDIA_NIM_FALLBACK_MODELS", "").split(","),
         )
         market_data = MarketDataCollector(os.getenv("KOREA_BANK_ECOS_API_KEY"))
-        for day, processed in ingest_daily_news(items, client, nim, market_data=market_data):
+        monetary_policy_analysis = None
+        try:
+            statement = BokMonetaryPolicyCollector().collect_latest()
+            monetary_policy_analysis = nim.classify_monetary_policy(title=statement.title, body=statement.body)
+        except (MonetaryPolicyNotFoundError, requests.RequestException, RuntimeError) as error:
+            print(f"통화정책방향 조회·분석 실패, 기존 금리 규칙을 사용합니다: {error}", file=sys.stderr)
+        for day, processed in ingest_daily_news(
+            items,
+            client,
+            nim,
+            market_data=market_data,
+            monetary_policy_analysis=monetary_policy_analysis,
+        ):
             status = processed.get("data", {}).get("status", "UNKNOWN")
             print(f"{day.isoformat()}: daily-briefing={status}")
     else:

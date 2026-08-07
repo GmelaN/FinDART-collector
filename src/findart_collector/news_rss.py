@@ -9,6 +9,7 @@ from typing import Iterable
 from xml.etree import ElementTree
 
 import requests
+from .progress import tqdm
 
 
 def parse_feed_urls(value: str | None) -> list[str]:
@@ -159,7 +160,7 @@ class NewsRssCollector:
     def fetch_all(self, limit_per_source: int | None = None) -> tuple[list[FeedResult], list[str]]:
         results: list[FeedResult] = []
         errors: list[str] = []
-        for feed_url in self.feed_urls:
+        for feed_url in tqdm(self.feed_urls, desc="RSS 피드 조회", unit="피드"):
             try:
                 response = self.session.get(feed_url, timeout=self.timeout)
                 response.raise_for_status()
