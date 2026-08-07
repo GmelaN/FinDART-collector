@@ -2,6 +2,8 @@
 
 대한민국 정책브리핑의 **부처 브리핑**을 수집해 FinDART API에 적재합니다.
 
+전체 수집·시장지표·금통위 기조·Today 재적재 흐름은 [운영 문서](docs/collector-pipeline.md)를 참고하세요.
+
 ## 실행
 
 ```bash
