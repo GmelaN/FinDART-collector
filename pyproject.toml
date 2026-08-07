@@ -3,11 +3,12 @@ name = "findart-collector"
 version = "0.1.0"
 description = "Collectors for FinDART source documents"
 requires-python = ">=3.11"
-dependencies = ["finance-datareader>=0.9.90", "python-dotenv>=1.0", "requests>=2.31"]
+dependencies = ["finance-datareader>=0.9.90", "python-dotenv>=1.0", "requests>=2.31", "tqdm>=4.67"]
 
 [project.scripts]
 findart-policy-briefing = "findart_collector.cli:main"
 findart-news-rss = "findart_collector.rss_cli:main"
+findart-bok-monetary-policy = "findart_collector.bok_cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

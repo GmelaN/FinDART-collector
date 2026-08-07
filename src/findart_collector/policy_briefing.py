@@ -11,6 +11,7 @@ from typing import Iterable
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 import requests
+from .progress import tqdm
 
 
 KOREA_BASE_URL = "https://www.korea.kr"
@@ -207,11 +208,16 @@ class KoreaPolicyBriefingCollector:
     def collect_pages(self, pages: int = 1, limit: int | None = None) -> list[PolicyBriefing]:
         if pages < 1:
             raise ValueError("pages는 1 이상이어야 합니다")
-        urls = [url for page in range(1, pages + 1) for url in self.list_urls(page)]
+        urls: list[str] = []
+        for page in tqdm(range(1, pages + 1), desc="정책브리핑 목록 조회", unit="페이지"):
+            urls.extend(self.list_urls(page))
         unique_urls = list(dict.fromkeys(urls))
         if limit is not None:
             unique_urls = unique_urls[:limit]
-        return [self.collect(url) for url in unique_urls]
+        return [
+            self.collect(url)
+            for url in tqdm(unique_urls, desc="정책브리핑 원문 수집", unit="문서")
+        ]
 
 
 class FinDartApiClient:
@@ -249,6 +255,42 @@ class FinDartApiClient:
             if not isinstance(total_pages, int) or page >= total_pages - 1:
                 return briefings
             page += 1
+
+    def get_today_briefing(self, briefing_date: date) -> dict[str, object]:
+        """Fetch the complete Today briefing before replacing its rate regime."""
+        result = self._get("/api/v1/today", params={"date": briefing_date.isoformat()})
+        data = result.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("id"), str):
+            raise RuntimeError("FinDART Today 브리핑 조회 응답에 id가 없습니다")
+        return data
+
+    def get_processed_content(self, content_id: str) -> dict[str, object]:
+        result = self._get(f"/api/v1/processed-contents/{content_id}", params={})
+        data = result.get("data")
+        if not isinstance(data, dict):
+            raise RuntimeError("FinDART 처리 콘텐츠 조회 응답에 data가 없습니다")
+        return data
+
+    def daily_briefing_ingestion_payload(self, content_id: str) -> dict[str, object]:
+        """Rebuild documented DailyBriefingIngestion from a Today content ID."""
+        processed = self.get_processed_content(content_id)
+        if processed.get("contentType") != "DAILY_BRIEFING":
+            raise RuntimeError("Today가 DAILY_BRIEFING 처리 콘텐츠를 가리키지 않습니다")
+        content = processed.get("content")
+        if not isinstance(content, dict):
+            raise RuntimeError("FinDART 일일 브리핑 처리 콘텐츠에 content가 없습니다")
+        payload = {
+            **content,
+            "source": processed.get("source"),
+            "externalId": processed.get("externalId"),
+            "collectedAt": processed.get("collectedAt"),
+            "originalContentIds": processed.get("originalContentIds"),
+            "publishedAt": processed.get("publishedAt"),
+        }
+        required = ("source", "externalId", "collectedAt", "originalContentIds", "publishedAt", "briefingDate", "mode", "title", "summary", "market")
+        if not all(payload.get(key) for key in required):
+            raise RuntimeError("FinDART 일일 브리핑을 재적재할 필수 필드가 없습니다")
+        return payload
 
     def ingest(self, briefing: PolicyBriefing, *, processed_body: str | None = None) -> tuple[str, dict[str, object]]:
         original_id = self.ingest_original(briefing.original_payload())

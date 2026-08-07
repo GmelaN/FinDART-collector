@@ -77,6 +77,52 @@ class PolicyBriefingApiSession:
         return ApiResponse({"success": True, "data": pages[page]})
 
 
+class TodayBriefingApiSession:
+    def __init__(self):
+        self.requests = []
+
+    def get(self, url, **kwargs):
+        self.requests.append(("GET", url, kwargs))
+        if url.endswith("/processed-contents/today-1"):
+            return ApiResponse({
+                "success": True,
+                "data": {
+                    "id": "today-1",
+                    "contentType": "DAILY_BRIEFING",
+                    "source": "NEWS_RSS_DAILY",
+                    "externalId": "daily-news-2026-07-16",
+                    "collectedAt": "2026-07-16T01:00:00Z",
+                    "originalContentIds": ["original-1"],
+                    "publishedAt": "2026-07-16T00:00:00Z",
+                    "content": {
+                        "briefingDate": "2026-07-16",
+                        "mode": "DAILY",
+                        "title": "기존 브리핑",
+                        "summary": "기존 요약",
+                        "market": [{"category": "INTEREST_RATE", "phase": "동결", "rationale": "기존"}],
+                        "headlines": [],
+                        "issues": [],
+                        "issueTracking": [],
+                        "events": [],
+                    },
+                },
+            })
+        return ApiResponse({
+            "success": True,
+            "data": {
+                "id": "today-1",
+                "briefingDate": "2026-07-16",
+                "market": [],
+                "summary": "기존 요약",
+                "publishedAt": "2026-07-16T00:00:00Z",
+            },
+        })
+
+    def post(self, url, **kwargs):
+        self.requests.append(("POST", url, kwargs))
+        return ApiResponse({"success": True, "data": {"status": "UPDATED"}})
+
+
 class PolicyBriefingParserTests(unittest.TestCase):
     def test_parses_detail_page_and_builds_api_payloads(self):
         collected_at = datetime(2026, 7, 23, 12, tzinfo=timezone.utc)
@@ -128,3 +174,22 @@ class FinDartApiClientTests(unittest.TestCase):
             ],
         )
         self.assertEqual(session.requests[0][1]["headers"], {"Authorization": "Bearer token"})
+
+    def test_reads_today_then_reingests_documented_daily_briefing_payload(self):
+        session = TodayBriefingApiSession()
+        client = FinDartApiClient("https://findart.example/", "token", session=session)
+
+        today = client.get_today_briefing(date(2026, 7, 16))
+        payload = client.daily_briefing_ingestion_payload("today-1")
+        result = client.ingest_processed("/api/v1/collector/processed-contents/daily-briefings", payload)
+
+        self.assertEqual(today["id"], "today-1")
+        self.assertEqual(result["data"]["status"], "UPDATED")
+        self.assertEqual(
+            session.requests,
+            [
+                ("GET", "https://findart.example/api/v1/today", {"params": {"date": "2026-07-16"}, "headers": {"Authorization": "Bearer token"}, "timeout": 20.0}),
+                ("GET", "https://findart.example/api/v1/processed-contents/today-1", {"params": {}, "headers": {"Authorization": "Bearer token"}, "timeout": 20.0}),
+                ("POST", "https://findart.example/api/v1/collector/processed-contents/daily-briefings", {"json": payload, "headers": {"Authorization": "Bearer token"}, "timeout": 20.0}),
+            ],
+        )
